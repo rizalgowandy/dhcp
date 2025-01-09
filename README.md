@@ -1,5 +1,5 @@
 # dhcp
-[![Build Status](https://img.shields.io/github/workflow/status/insomniacslk/dhcp/Tests/master)](https://github.com/insomniacslk/dhcp/actions?query=branch%3Amaster)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/insomniacslk/dhcp/tests.yml?branch=master)](https://github.com/insomniacslk/dhcp/actions?query=branch%3Amaster)
 [![GoDoc](https://godoc.org/github.com/insomniacslk/dhcp?status.svg)](https://godoc.org/github.com/insomniacslk/dhcp)
 [![codecov](https://codecov.io/gh/insomniacslk/dhcp/branch/master/graph/badge.svg)](https://codecov.io/gh/insomniacslk/dhcp)
 [![Go Report Card](https://goreportcard.com/badge/github.com/insomniacslk/dhcp)](https://goreportcard.com/report/github.com/insomniacslk/dhcp)
@@ -54,3 +54,4 @@ See more example code at https://github.com/insomniacslk/exdhcp
 * CoreDHCP, a fast, multithreaded, modular and extensible DHCP server, https://github.com/coredhcp/coredhcp
 * u-root, an embeddable root file system, https://github.com/u-root/u-root
 * Talos: a modern OS for Kubernetes, https://github.com/talos-systems/talos
+* Smee: the network boot service in the Tinkerbell stack, https://github.com/tinkerbell/smee

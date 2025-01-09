@@ -1,44 +1,158 @@
 package dhcpv6
 
 import (
+	"errors"
+	"fmt"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
+	"github.com/u-root/uio/uio"
 )
 
-func TestOptIANAParseOptIANA(t *testing.T) {
-	data := []byte{
-		1, 0, 0, 0, // IAID
-		0, 0, 0, 1, // T1
-		0, 0, 0, 2, // T2
-		0, 5, 0, 0x18, 0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0, 0, 0, 0xb2, 0x7a, 0, 0, 0xc0, 0x8a, // options
-	}
-	opt, err := ParseOptIANA(data)
-	require.NoError(t, err)
-	require.Equal(t, OptionIANA, opt.Code())
-}
+func TestIANAParseAndGetter(t *testing.T) {
+	for i, tt := range []struct {
+		buf  []byte
+		err  error
+		want []*OptIANA
+	}{
+		{
+			buf: []byte{
+				0, 3, // IANA option code
+				0, 40, // length
+				1, 0, 0, 0, // IAID
+				0, 0, 0, 1, // T1
+				0, 0, 0, 2, // T2
+				0, 5, 0, 0x18, 0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0, // IPv6
+				0, 0, 0, 2, // PreferredLifetime
+				0, 0, 0, 4, // ValidLifetime
+			},
+			want: []*OptIANA{
+				&OptIANA{
+					IaId: [4]byte{1, 0, 0, 0},
+					T1:   1 * time.Second,
+					T2:   2 * time.Second,
+					Options: IdentityOptions{Options: Options{&OptIAAddress{
+						IPv6Addr:          net.IP{0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0},
+						PreferredLifetime: 2 * time.Second,
+						ValidLifetime:     4 * time.Second,
+						Options:           AddressOptions{Options: Options{}},
+					}}},
+				},
+			},
+		},
+		{
+			buf: []byte{
+				0, 3, // IANA option code
+				0, 40, // length
+				1, 0, 0, 0, // IAID
+				0, 0, 0, 1, // T1
+				0, 0, 0, 2, // T2
+				0, 5, 0, 0x18, 0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0, // IPv6
+				0, 0, 0, 2, // PreferredLifetime
+				0, 0, 0, 4, // ValidLifetime
 
-func TestOptIANAParseOptIANAInvalidLength(t *testing.T) {
-	data := []byte{
-		1, 0, 0, 0, // IAID
-		0, 0, 0, 1, // T1
-		// truncated from here
-	}
-	_, err := ParseOptIANA(data)
-	require.Error(t, err)
-}
+				0, 3, // IANA option code
+				0, 40, // length
+				1, 2, 3, 4, // IAID
+				0, 0, 0, 9, // T1
+				0, 0, 0, 8, // T2
+				0, 5, 0, 0x18, 0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0, // IPv6
+				0, 0, 0, 2, // PreferredLifetime
+				0, 0, 0, 4, // ValidLifetime
+			},
+			want: []*OptIANA{
+				&OptIANA{
+					IaId: [4]byte{1, 0, 0, 0},
+					T1:   1 * time.Second,
+					T2:   2 * time.Second,
+					Options: IdentityOptions{Options: Options{&OptIAAddress{
+						IPv6Addr:          net.IP{0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0},
+						PreferredLifetime: 2 * time.Second,
+						ValidLifetime:     4 * time.Second,
+						Options:           AddressOptions{Options: Options{}},
+					}}},
+				},
+				&OptIANA{
+					IaId: [4]byte{1, 2, 3, 4},
+					T1:   9 * time.Second,
+					T2:   8 * time.Second,
+					Options: IdentityOptions{Options: Options{&OptIAAddress{
+						IPv6Addr:          net.IP{0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0},
+						PreferredLifetime: 2 * time.Second,
+						ValidLifetime:     4 * time.Second,
+						Options:           AddressOptions{Options: Options{}},
+					}}},
+				},
+			},
+		},
 
-func TestOptIANAParseOptIANAInvalidOptions(t *testing.T) {
-	data := []byte{
-		1, 0, 0, 0, // IAID
-		0, 0, 0, 1, // T1
-		0, 0, 0, 2, // T2
-		0, 5, 0, 0x18, 0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0, 0, 0, 0xb2, 0x7a, // truncated options
+		{
+			buf:  nil,
+			want: nil,
+		},
+		{
+			buf:  []byte{0, 3, 0, 1, 0},
+			want: nil,
+			err:  uio.ErrUnreadBytes,
+		},
+		{
+			buf: []byte{
+				0, 3, // IANA option code
+				0, 8, // length
+				1, 0, 0, 0, // IAID
+				0, 0, 0, 1, // T1
+				// truncated from here
+			},
+			want: nil,
+			err:  uio.ErrBufferTooShort,
+		},
+		{
+			buf: []byte{
+				0, 3, // IANA option code
+				0, 36, // length
+				1, 0, 0, 0, // IAID
+				0, 0, 0, 1, // T1
+				0, 0, 0, 2, // T2
+				0, 5, 0, 0x18, 0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0, // IPv6
+				0, 0, 0xb2, 0x7a, // PreferredLifetime
+				// Missing ValidLifetime
+			},
+			want: nil,
+			err:  uio.ErrBufferTooShort,
+		},
+	} {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			var mo MessageOptions
+			if err := mo.FromBytes(tt.buf); !errors.Is(err, tt.err) {
+				t.Errorf("FromBytes = %v, want %v", err, tt.err)
+			}
+			if got := mo.IANA(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("IANA = %v, want %v", got, tt.want)
+			}
+			var wantOne *OptIANA
+			if len(tt.want) >= 1 {
+				wantOne = tt.want[0]
+			}
+			if got := mo.OneIANA(); !reflect.DeepEqual(got, wantOne) {
+				t.Errorf("OneIANA = %v, want %v", got, wantOne)
+			}
+
+			if len(tt.want) >= 1 {
+				var b MessageOptions
+				for _, iana := range tt.want {
+					b.Add(iana)
+				}
+				got := b.ToBytes()
+				if diff := cmp.Diff(tt.buf, got); diff != "" {
+					t.Errorf("ToBytes mismatch (-want, +got): %s", diff)
+				}
+			}
+		})
 	}
-	_, err := ParseOptIANA(data)
-	require.Error(t, err)
 }
 
 func TestOptIANAGetOneOption(t *testing.T) {
@@ -93,48 +207,33 @@ func TestOptIANADelOption(t *testing.T) {
 	require.Equal(t, iana2.Options.Options, Options{&optsc})
 }
 
-func TestOptIANAToBytes(t *testing.T) {
-	opt := OptIANA{
-		IaId: [4]byte{1, 2, 3, 4},
-		T1:   12345 * time.Second,
-		T2:   54321 * time.Second,
-		Options: IdentityOptions{[]Option{
-			OptElapsedTime(10 * time.Millisecond),
-		}},
-	}
-	expected := []byte{
-		1, 2, 3, 4, // IA ID
-		0, 0, 0x30, 0x39, // T1 = 12345
-		0, 0, 0xd4, 0x31, // T2 = 54321
-		0, 8, 0, 2, 0x00, 0x01,
-	}
-	require.Equal(t, expected, opt.ToBytes())
-}
-
 func TestOptIANAString(t *testing.T) {
 	data := []byte{
 		1, 0, 0, 0, // IAID
 		0, 0, 0, 1, // T1
 		0, 0, 0, 2, // T2
-		0, 5, 0, 0x18, 0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0, 0, 0, 0xb2, 0x7a, 0, 0, 0xc0, 0x8a, // options
+		0, 5, 0, 0x18, 0x24, 1, 0xdb, 0, 0x30, 0x10, 0xc0, 0x8f, 0xfa, 0xce, 0, 0, 0, 0x44, 0, 0, // IPv6
+		0, 0, 0xb2, 0x7a, // PreferredLifetime
+		0, 0, 0xc0, 0x8a, // ValidLifetime
 	}
-	opt, err := ParseOptIANA(data)
+	var opt OptIANA
+	err := opt.FromBytes(data)
 	require.NoError(t, err)
 
 	str := opt.String()
 	require.Contains(
 		t, str,
-		"IAID=[1 0 0 0]",
+		"IAID=0x01000000",
 		"String() should return the IAID",
 	)
 	require.Contains(
 		t, str,
-		"t1=1s, t2=2s",
+		"T1=1s T2=2s",
 		"String() should return the T1/T2 options",
 	)
 	require.Contains(
 		t, str,
-		"options={",
+		"Options={",
 		"String() should return a list of options",
 	)
 }

@@ -33,8 +33,16 @@ func ParseVendorData(packet dhcpv6.DHCPv6) (*VendorData, error) {
 	vData := []string{}
 
 	if opt17 != nil {
-		vo := opt17.(*dhcpv6.OptVendorOpts).VendorOpts
-		for _, opt := range vo {
+		vendorOptsOption := opt17.(*dhcpv6.OptVendorOpts)
+
+		// MLNX-OS has the relevant information spread over different sub-options
+		// of option 17 so the usual approach doesn't work
+		if vendorOptsOption.EnterpriseNumber == uint32(iana.EnterpriseIDMellanoxTechnologiesLTD) {
+			return getMellanoxVendorData(vendorOptsOption)
+		}
+
+		// rest of vendors use a single sub-option so we stringify them and parse them below
+		for _, opt := range vendorOptsOption.VendorOpts {
 			vData = append(vData, string(opt.(*dhcpv6.OptionGeneric).OptionData))
 		}
 	} else {
@@ -69,6 +77,18 @@ func ParseVendorData(packet dhcpv6.DHCPv6) (*VendorData, error) {
 			vd.Model = p[1]
 			vd.Serial = p[2]
 			return &vd, nil
+		
+		// NVOS##MMM1234##MM1234X56ABC
+		case strings.HasPrefix(d, "NVOS##"):
+			p := strings.Split(d, "##")
+			if len(p) < 3 {
+				return nil, errVendorOptionMalformed
+			}
+
+			vd.VendorName = p[0]
+			vd.Model = p[1]
+			vd.Serial = p[2]
+			return &vd, nil
 
 		// For Ciena the class identifier (opt 60) is written in the following format:
 		//    {vendor iana code}-{product}-{type}
@@ -81,10 +101,12 @@ func ParseVendorData(packet dhcpv6.DHCPv6) (*VendorData, error) {
 			if len(v) < 3 {
 				return nil, errVendorOptionMalformed
 			}
-			duid := packet.(*dhcpv6.Message).Options.ClientID()
 			vd.VendorName = iana.EnterpriseIDCienaCorporation.String()
 			vd.Model = v[1] + "-" + v[2]
-			vd.Serial = string(duid.EnterpriseIdentifier)
+			duid := packet.(*dhcpv6.Message).Options.ClientID()
+			if enterpriseDUID, ok := duid.(*dhcpv6.DUIDEN); ok {
+				vd.Serial = string(enterpriseDUID.EnterpriseIdentifier)
+			}
 			return &vd, nil
 		}
 	}

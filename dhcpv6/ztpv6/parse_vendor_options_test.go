@@ -64,7 +64,7 @@ func TestParseVendorDataWithVendorClass(t *testing.T) {
 	tt := []struct {
 		name     string
 		vc       string
-		clientId *dhcpv6.Duid
+		clientId dhcpv6.DUID
 		want     *VendorData
 		fail     bool
 	}{
@@ -72,6 +72,7 @@ func TestParseVendorDataWithVendorClass(t *testing.T) {
 		{name: "unknownVendor", vc: "VendorX;BFR10K;XX12345", fail: true, want: nil},
 		{name: "truncatedArista", vc: "Arista;1234", fail: true, want: nil},
 		{name: "truncatedZPE", vc: "ZPESystems:1234", fail: true, want: nil},
+		{name: "truncatedNVOS", vc: "NVOS##MMM1234", fail: true, want: nil},
 		{
 			name: "arista",
 			vc:   "Arista;DCS-7050S-64;01.23;JPE12345678",
@@ -80,12 +81,14 @@ func TestParseVendorDataWithVendorClass(t *testing.T) {
 			name: "zpe",
 			vc:   "ZPESystems:NSC:001234567",
 			want: &VendorData{VendorName: "ZPESystems", Model: "NSC", Serial: "001234567"},
-		},
-		{
+		}, {
+			name: "nvos",
+			vc:   "NVOS##MMM1234##MM1234X123456",
+			want: &VendorData{VendorName: "NVOS", Model: "MMM1234", Serial: "MM1234X123456"},
+		}, {
 			name: "Ciena",
 			vc:   "1271-23422Z11-123",
-			clientId: &dhcpv6.Duid{
-				Type:                 dhcpv6.DUID_EN,
+			clientId: &dhcpv6.DUIDEN{
 				EnterpriseIdentifier: []byte("001234567"),
 			},
 			want: &VendorData{VendorName: iana.EnterpriseIDCienaCorporation.String(), Model: "23422Z11-123", Serial: "001234567"},
@@ -102,7 +105,7 @@ func TestParseVendorDataWithVendorClass(t *testing.T) {
 			packet.AddOption(&dhcpv6.OptVendorClass{
 				EnterpriseNumber: 0000, Data: [][]byte{[]byte(tc.vc)}})
 			if tc.clientId != nil {
-				packet.AddOption(dhcpv6.OptClientID(*tc.clientId))
+				packet.AddOption(dhcpv6.OptClientID(tc.clientId))
 			}
 			vd, err := ParseVendorData(packet)
 			if err != nil && !tc.fail {

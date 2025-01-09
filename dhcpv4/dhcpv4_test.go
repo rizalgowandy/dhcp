@@ -266,23 +266,22 @@ func TestDHCPv4NewRequestFromOfferWithModifier(t *testing.T) {
 	require.Equal(t, MessageTypeRequest, req.MessageType())
 }
 
-func TestDHCPv4NewRenewFromOffer(t *testing.T) {
-	offer, err := New()
+func TestDHCPv4NewRenewFromAck(t *testing.T) {
+	ack, err := New()
 	require.NoError(t, err)
-	offer.SetBroadcast()
-	offer.UpdateOption(OptMessageType(MessageTypeOffer))
-	offer.UpdateOption(OptServerIdentifier(net.IPv4(192, 168, 0, 1)))
-	offer.UpdateOption(OptRequestedIPAddress(net.IPv4(192, 168, 0, 1)))
-	offer.YourIPAddr = net.IPv4(192, 168, 0, 1)
+	ack.SetBroadcast()
+	ack.UpdateOption(OptMessageType(MessageTypeAck))
+	ack.UpdateOption(OptServerIdentifier(net.IPv4(192, 168, 0, 1)))
+	ack.YourIPAddr = net.IPv4(192, 168, 0, 1)
 
-	// RFC 2131: RENEW-style requests will be unicast
 	var req *DHCPv4
-	req, err = NewRenewFromOffer(offer)
+	req, err = NewRenewFromAck(ack)
 	require.NoError(t, err)
 	require.Equal(t, MessageTypeRequest, req.MessageType())
 	require.Nil(t, req.GetOneOption(OptionServerIdentifier))
 	require.Nil(t, req.GetOneOption(OptionRequestedIPAddress))
-	require.Equal(t, offer.YourIPAddr, req.ClientIPAddr)
+	require.Equal(t, ack.YourIPAddr, req.ClientIPAddr)
+	// RFC 2131: RENEW-style requests will be unicast
 	require.True(t, req.IsUnicast())
 	require.False(t, req.IsBroadcast())
 	// Renewals should behave identically to initial requests regarding requested options
@@ -292,12 +291,12 @@ func TestDHCPv4NewRenewFromOffer(t *testing.T) {
 	require.True(t, req.IsOptionRequested(OptionDomainNameServer))
 }
 
-func TestDHCPv4NewRenewFromOfferWithModifier(t *testing.T) {
-	offer, err := New()
+func TestDHCPv4NewRenewFromAckWithModifier(t *testing.T) {
+	ack, err := New()
 	require.NoError(t, err)
-	offer.UpdateOption(OptMessageType(MessageTypeOffer))
+	ack.UpdateOption(OptMessageType(MessageTypeAck))
 	userClass := WithUserClass("linuxboot", false)
-	req, err := NewRenewFromOffer(offer, userClass)
+	req, err := NewRenewFromAck(ack, userClass)
 	require.NoError(t, err)
 	require.Equal(t, MessageTypeRequest, req.MessageType())
 	require.Contains(t, req.UserClass(), "linuxboot")
@@ -379,6 +378,19 @@ func TestIsOptionRequested(t *testing.T) {
 	require.True(t, pkt.IsOptionRequested(OptionDomainNameServer))
 }
 
+func TestIsGenericOptionRequested(t *testing.T) {
+	pkt, err := New()
+	require.NoError(t, err)
+
+	var genericOption224 = GenericOptionCode(224)
+	var genericOption225 = GenericOptionCode(225)
+	pkt.UpdateOption(OptParameterRequestList(OptionBroadcastAddress, genericOption224))
+	require.True(t, pkt.IsOptionRequested(OptionBroadcastAddress))
+	require.False(t, pkt.IsOptionRequested(OptionSwapServer))
+	require.True(t, pkt.IsOptionRequested(genericOption224), "Did not detect generic option 224 in <%v>", pkt.ParameterRequestList())
+	require.False(t, pkt.IsOptionRequested(genericOption225), "Detected generic option 225 in <%v>", pkt.ParameterRequestList())
+}
+
 // TODO
 //      test Summary() and String()
 func TestSummary(t *testing.T) {
@@ -412,4 +424,48 @@ func Test_withIP(t *testing.T) {
 	writeIP(buff, ip1)
 	b := buff.Buffer
 	require.Equal(t, b.Len(), 4, "Testing no of bytes written by writeIP func")
+}
+
+func FuzzDHCPv4(f *testing.F) {
+
+	data_0 := []byte{
+		1,                      // dhcp request
+		1,                      // ethernet hw type
+		6,                      // hw addr length
+		3,                      // hop count
+		0xaa, 0xbb, 0xcc, 0xdd, // transaction ID, big endian (network)
+		0, 3, // number of seconds
+		0, 1, // broadcast
+		0, 0, 0, 0, // client IP address
+		0, 0, 0, 0, // your IP address
+		0, 0, 0, 0, // server IP address
+		0, 0, 0, 0, // gateway IP address
+		0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // client MAC address + padding
+	}
+
+	data_1 := []byte{
+		1,                      // dhcp request
+		1,                      // ethernet hw type
+		6,                      // hw addr length
+		0,                      // hop count
+		0xaa, 0xbb, 0xcc, 0xdd, // transaction ID
+		3, 0, // number of seconds
+		1, 0, // broadcast
+		0, 0, 0, 0, // client IP address
+		0, 0, 0, 0, // your IP address
+		0, 0, 0, 0, // server IP address
+		0, 0, 0, 0, // gateway IP address
+		0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // client MAC address + padding
+	}
+
+	f.Add(data_0)
+	f.Add(data_1)
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		msg, err := FromBytes(data)
+		if err != nil {
+			return
+		}
+		msg.ToBytes()
+	})
 }

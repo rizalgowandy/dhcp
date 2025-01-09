@@ -107,6 +107,11 @@ func TestParseOption(t *testing.T) {
 			want:  "258",
 		},
 		{
+			code:  OptionAutoConfigure,
+			value: []byte{0},
+			want:  "DoNotAutoConfigure",
+		},
+		{
 			code:  OptionUserClassInformation,
 			value: []byte{4, 't', 'e', 's', 't', 3, 'f', 'o', 'o'},
 			want:  "test, foo",
@@ -114,7 +119,7 @@ func TestParseOption(t *testing.T) {
 		{
 			code:  OptionRelayAgentInformation,
 			value: []byte{1, 12, 99, 105, 114, 99, 117, 105, 116, 45, 105, 100, 45, 49},
-			want:  "\n    Agent Circuit ID Sub-option: circuit-id-1 ([99 105 114 99 117 105 116 45 105 100 45 49])\n",
+			want:  "\n    Agent Circuit ID Sub-option: \"circuit-id-1\" ([99 105 114 99 117 105 116 45 105 100 45 49])\n",
 		},
 		{
 			code:  OptionClientSystemArchitectureType,
@@ -174,14 +179,17 @@ func TestOptionsMarshal(t *testing.T) {
 		},
 		{
 			// Test sorted key order.
+			// RFC 3046 section 2.1 states that option 82 SHALL come last.
 			opts: Options{
 				5:   []byte{1, 2, 3},
+				82:  []byte{201, 202, 203},
 				100: []byte{101, 102, 103},
 				255: []byte{},
 			},
 			want: []byte{
 				5, 3, 1, 2, 3,
 				100, 3, 101, 102, 103,
+				82, 3, 201, 202, 203,
 			},
 		},
 		{
@@ -247,9 +255,9 @@ func TestOptionsUnmarshal(t *testing.T) {
 			wantError: true,
 		},
 		{
-			// Option present after the End is a nono.
-			input:     []byte{byte(OptionEnd), 3},
-			wantError: true,
+			// Option present after the End.
+			input: []byte{byte(OptionEnd), 3},
+			want:  Options{},
 		},
 		{
 			input: []byte{byte(OptionEnd)},
